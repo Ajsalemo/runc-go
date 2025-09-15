@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"time"
 
 	runc "github.com/containerd/go-runc"
 	zap "go.uber.org/zap"
@@ -33,6 +34,19 @@ func listContainers(r runc.Runc, ctx context.Context) error {
 	}
 	return nil
 }
+// Start the container
+// runc.CreateOptions starts the container in `Detached` mode so that the invocation doesn't block
+// This is the equivalen of 'runc run -d <container_id> <bundle_path> mycontainer'
+// Runc 'run' combines 'create' and 'start' functionality
+func runContainer(r runc.Runc, ctx context.Context) error {
+	i, err := r.Run(ctx, "mycontainer", "./", &runc.CreateOpts{Detach: true})
+	if err != nil {
+		zap.L().Error("Error starting container", zap.Error(err))
+		return err
+	}
+	zap.L().Info("Container started successfully with PID:", zap.Int("pid", i))
+	return nil
+}
 
 func main() {
 	// Command line args to invoke various runc functionality
@@ -42,10 +56,19 @@ func main() {
 	isRootless := false
 	ctx := context.Background()
 	r := runc.Runc{
+		// Run rootless, otherwise we'll probably hit errors
 		Rootless: &isRootless,
 	}
 	// List all containers actively managed by runc
 	if *listRuncContainers {
 		listContainers(r, ctx)
+	}
+	// Start the container
+	// runc.CreateOptions starts the container in `Detached` mode so that the invocation doesn't block
+	// This is the equivalen of 'runc run -d <container_id> <bundle_path> mycontainer'
+	// Runc 'run' combines 'create' and 'start' functionality
+	err := runContainer(r, ctx)
+	if err != nil {
+		return 
 	}
 }

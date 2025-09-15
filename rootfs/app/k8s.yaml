@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Secret
+type: Opaque
+metadata:
+  name: queue-auth
+data:
+  connection: "RGVmYXVsdEVuZHBvaW50c1Byb3RvY29sPWh0dHBzO0FjY291bnROYW1lPWFuc2FsZW1vc3RvcmFnZTtBY2NvdW50S2V5PUlDZ2oxSTRpWlcvWU51WXYzdWorNUh0bXRaNjZ3K0JhcVV4dzEzMzNPYXNISWhBemh1UUc4VmVnNVBjeTc4Ymh0cjQvK01sVmtPeWorQVN0Q0FGa293PT07RW5kcG9pbnRTdWZmaXg9Y29yZS53aW5kb3dzLm5ldA=="
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: queue-trigger-auth
+  namespace: default
+spec:
+  secretTargetRef:
+    - parameter: connection
+      name: queue-auth
+      key: connection
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledJob
+metadata:
+  name: gotcpservertls
+  namespace: default
+spec:
+  minReplicaCount: 0            
+  maxReplicaCount: 1 
+  jobTargetRef:
+    template:
+      spec:
+        containers:
+        - name: gotcpservertls
+          image: gotcptls:latest
+          imagePullPolicy: IfNotPresent
+        restartPolicy: Never
+  triggers:
+  - type: azure-queue
+    metadata:
+      queueName: "queue"
+      queueLength: "1"
+      queueLengthStrategy: "visibleonly"
+      accountName: "ansalemostorage"
+
+    authenticationRef:
+      name: queue-trigger-auth
+  
+
