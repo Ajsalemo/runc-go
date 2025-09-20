@@ -108,6 +108,14 @@ func deleteRuncContainer(r runc.Runc, containerName string, ctx context.Context)
 	return nil
 }
 
+// Helper function to create a bundle. This is a two part process
+// 1. Create a rootfs directory and populate it with content from an existing image
+// 2. Create a config.json
+func createOCIBundle(r runc.Runc, ctx context.Context) {
+	// TODO - implement docker export $(docker create busybox) | tar -C rootfs -xvf - (programmatically)
+	// TODO - implement the command `runc spec` to create a config.json (programmatically). This doesn't seem to be exposed from the SDK
+}
+
 func main() {
 	// Command line args to invoke various runc functionality
 	listRuncContainers := flag.Bool("list-containers", false, "List containers started by runc")
