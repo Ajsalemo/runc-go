@@ -16,6 +16,7 @@ type Conf struct {
 func init() {
 	zap.ReplaceGlobals(zap.Must(zap.NewProduction()))
 }
+
 // List all containers managed by runc
 func listContainers(r runc.Runc, ctx context.Context) error {
 	list, err := r.List(ctx)
@@ -32,28 +33,36 @@ func listContainers(r runc.Runc, ctx context.Context) error {
 	for _, container := range list {
 		zap.L().Info("Container ID:", zap.String("id", container.ID))
 	}
+
 	return nil
 }
 
 // Start the container
+//
 // runc.CreateOptions starts the container in `Detached` mode so that the invocation doesn't block
-// This is the equivalen of 'runc run -d <container_id> <bundle_path> mycontainer'
-// Runc 'run' combines 'create' and 'start' functionality
-func runContainer(r runc.Runc, ctx context.Context) error {
-	i, err := r.Run(ctx, "mycontainer", "./", &runc.CreateOpts{Detach: true})
+// This is the equivalent of 'runc run -d <container_id> <bundle_path> mycontainer'
+//
+// runc 'run' combines 'create' and 'start' functionality
+func runContainer(r runc.Runc, containerName string, ctx context.Context) error {
+	zap.L().Info("Starting container", zap.String("container", containerName))
+	zap.L().Info("Bundle path is set to ./")
+	i, err := r.Run(ctx, containerName, "./", &runc.CreateOpts{Detach: true})
 	if err != nil {
 		zap.L().Error("Error starting container", zap.Error(err))
 		return err
 	}
-	zap.L().Info("Container started successfully with PID:", zap.Int("pid", i))
+	zap.L().Info("Container started successfully with PID:", zap.Int("pid", i), zap.String("container", containerName))
 
 	return nil
 }
+
 // Monitor container metrics for cpu, memory and pid (pid shows number of pids in the container, not the actual pids)
-func monitorContainerResources(r runc.Runc, ctx context.Context, metricType string, eventInterval time.Duration) error {
-	zap.L().Info("Monitoring container resources, this may take a few seconds to start outputting information", zap.String("metric_type", metricType))
+//
+// Example usage: --monitor-container --metric-type "cpu" --metric-interval 3 --container-name "gotcpservertls"
+func monitorContainerResources(r runc.Runc, containerName string, ctx context.Context, metricType string, eventInterval time.Duration) error {
+	zap.L().Info("Monitoring container resources, this may take a few seconds to start outputting information", zap.String("metric_type", metricType), zap.String("container", containerName))
 	zap.L().Info("Press Ctrl+C to stop monitoring")
-	event, err := r.Events(ctx, "mycontainer", eventInterval)
+	event, err := r.Events(ctx, containerName, eventInterval)
 	if err != nil {
 		zap.L().Error("Error getting events", zap.Error(err))
 		return err
@@ -87,6 +96,17 @@ func monitorContainerResources(r runc.Runc, ctx context.Context, metricType stri
 	}
 	return nil
 }
+// Delete the container
+func deleteRuncContainer(r runc.Runc, containerName string, ctx context.Context) error {
+	zap.L().Info("Deleting container", zap.String("container", containerName))
+	err := r.Delete(ctx, containerName, &runc.DeleteOpts{Force: true})
+	if err != nil {
+		zap.L().Error("Error deleting container", zap.Error(err))
+		return err
+	}
+	zap.L().Info("Container deleted successfully", zap.String("container", containerName))
+	return nil
+}
 
 func main() {
 	// Command line args to invoke various runc functionality
@@ -98,6 +118,8 @@ func main() {
 	metricTypeArg := flag.String("metric-type", "", "Metric type to monitor for the container. Supported types are 'cpu', 'memory', 'pid")
 	// Interval in seconds to fetch resource metrics. Default is 10 seconds
 	metricInveralArg := flag.Int("metric-interval", 10, "Interval in seconds to fetch resource metrics. Max interval duration is 60 seconds")
+	containerName := flag.String("container-name", "", "Name of the container to run/monitor/delete")
+	deleteContainer := flag.Bool("delete-container", false, "Delete a container using runc")
 	flag.Parse()
 	// Runc configurations
 	isRootless := false
@@ -114,19 +136,19 @@ func main() {
 	// runc.CreateOptions starts the container in `Detached` mode so that the invocation doesn't block
 	// This is the equivalen of 'runc run -d <container_id> <bundle_path> mycontainer'
 	// Runc 'run' combines 'create' and 'start' functionality
-	if *runContainerArg {
-		err := runContainer(r, ctx)
+	if *runContainerArg && *containerName != "" {
+		err := runContainer(r, *containerName, ctx)
 		if err != nil {
 			return
 		}
 	}
 	// Monitor container resources
-	if *monitorArg {
+	if *monitorArg && *containerName != "" {
 		if *metricTypeArg == "" || (*metricTypeArg != "cpu" && *metricTypeArg != "memory" && *metricTypeArg != "pid") {
 			zap.L().Error("Invalid metric type. Supported types are 'cpu', 'memory', 'pid'")
 			return
 		}
-		// Check if metricInveralArg is less than 10
+		// Check if metricInveralArg is less than 1
 		if *metricInveralArg < 1 {
 			zap.L().Warn("Metric interval is less than 1. Setting it to a default of 10 seconds")
 			*metricInveralArg = 10
@@ -140,7 +162,14 @@ func main() {
 		eventInterval := time.Duration(*metricInveralArg) * time.Second
 		zap.L().Info("Metric interval set to", zap.Duration("interval", eventInterval))
 		// Call the function to monitor container resources
-		monitorContainerResources(r, ctx, string(*metricTypeArg), eventInterval)
+		monitorContainerResources(r, *containerName, ctx, string(*metricTypeArg), eventInterval)
 		return
+	}
+	// Delete the container
+	if *containerName != "" && *deleteContainer {
+		err := deleteRuncContainer(r, *containerName, ctx)
+		if err != nil {
+			return
+		}
 	}
 }
