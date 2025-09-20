@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"os"
+	"os/exec"
 	"time"
 
 	runc "github.com/containerd/go-runc"
@@ -109,11 +112,33 @@ func deleteRuncContainer(r runc.Runc, containerName string, ctx context.Context)
 }
 
 // Helper function to create a bundle. This is a two part process
+//
 // 1. Create a rootfs directory and populate it with content from an existing image
+//
 // 2. Create a config.json
-func createOCIBundle(r runc.Runc, ctx context.Context) {
+func createOCIBundle() {
+	zap.L().Info("Creating an OCI bundle in the current directory - creating a rootfs directory and config.json")
+	zap.L().Info("Checking if config.json already exists. If it doesn't, running `runc spec` to create it now")
+	// Check if config.json already exists
+	_, err := os.Stat("config.json")
+	if err == nil {
+		zap.L().Info("config.json already exists, skipping creation")
+		return
+	}
+	// If the file doesn't exist then run `runc spec` to create it. This is created with assumed defaults: https://github.com/opencontainers/runc
+	if errors.Is(err, os.ErrNotExist) {
+		zap.L().Info("config.json does not exist, creating it now")
+		cmd := exec.Command("sudo", "runc", "spec")
+		err := cmd.Run()
+		if err != nil {
+			zap.L().Error("Error creating config.json through 'sudo runc spec'", zap.Error(err))
+			return
+		}
+		// File has successfully been created
+		zap.L().Info("config.json created successfully through 'sudo runc spec'")
+		return
+	}
 	// TODO - implement docker export $(docker create busybox) | tar -C rootfs -xvf - (programmatically)
-	// TODO - implement the command `runc spec` to create a config.json (programmatically). This doesn't seem to be exposed from the SDK
 }
 
 func main() {
@@ -180,4 +205,6 @@ func main() {
 			return
 		}
 	}
+
+	createOCIBundle()
 }
