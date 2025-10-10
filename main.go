@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -123,22 +124,56 @@ func createOCIBundle() {
 	_, err := os.Stat("config.json")
 	if err == nil {
 		zap.L().Info("config.json already exists, skipping creation")
-		return
 	}
 	// If the file doesn't exist then run `runc spec` to create it. This is created with assumed defaults: https://github.com/opencontainers/runc
 	if errors.Is(err, os.ErrNotExist) {
 		zap.L().Info("config.json does not exist, creating it now")
-		cmd := exec.Command("sudo", "runc", "spec")
+		cmd := exec.Command("runc", "spec")
 		err := cmd.Run()
 		if err != nil {
-			zap.L().Error("Error creating config.json through 'sudo runc spec'", zap.Error(err))
+			zap.L().Error("Error creating config.json through 'runc spec'", zap.Error(err))
 			return
 		}
 		// File has successfully been created
-		zap.L().Info("config.json created successfully through 'sudo runc spec'")
-		return
+		zap.L().Info("config.json created successfully through 'runc spec'")
 	}
 	// TODO - implement docker export $(docker create busybox) | tar -C rootfs -xvf - (programmatically)
+	zap.L().Info("Checking if rootfs directory already exists. If it doesn't, creating it now and populating it with contents from the exported image")
+	// Check if rootfs already exists
+	_, errRootFs := os.Stat("rootfs")
+	if errRootFs == nil {
+		zap.L().Info("rootfs exists, skipping creation")
+		// Check if rootfs is populated with content
+		// If it isnt, then export and untar the image into rootfs
+		dir, err := os.Open("rootfs")
+		if err != nil {
+			zap.L().Error("Error opening rootfs directory", zap.Error(err))
+			return
+		}
+		defer dir.Close()	
+		// Read the first entry in the directory
+		_, err = dir.Readdir(1)
+		if err == io.EOF {
+			zap.L().Info("rootfs is empty")
+		}	
+		// Otherwise rootfs is not empty - to risk of overwriting existing content, we will not populate it
+		zap.L().Error("rootfs is not empty, not proceeding with image content exporting")
+		return
+	}
+	// If rootfs doesn't exist then create it - but only do this if it doesn't exist
+	if errors.Is(errRootFs, os.ErrNotExist) {
+		zap.L().Info("rootfs does not exist, creating it now")
+		cmd := exec.Command("mkdir", "rootfs")
+		err := cmd.Run()
+		if err != nil {
+			zap.L().Error("Error creating rootfs through 'mkdir rootfs'", zap.Error(err))
+			return
+		}
+		// directory has successfully been created
+		zap.L().Info("rootfs created successfully through 'mkdir rootfs'")
+	}
+	// By this point, rootfs and config.json should both exist and rootfs should be empty if it did previously exist
+	// Start using `$(docker create busybox) | tar -C rootfs -xvf -` to populate rootfs
 }
 
 func main() {
