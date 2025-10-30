@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -117,7 +118,12 @@ func deleteRuncContainer(r runc.Runc, containerName string, ctx context.Context)
 // 1. Create a rootfs directory and populate it with content from an existing image
 // 2. Create a config.json
 // 3. Export the image contents into rootfs (TODO: implement programmatically)
-func createOCIBundle() {
+func createOCIBundle(exportImage string) {
+	// If exportImage is empty return immediately
+	if (exportImage == "") {
+		zap.L().Error("OCI bundle creation was invoked but no image was provided through --export-image flag. Please provide an image to export")
+		return
+	}
 	zap.L().Info("Creating an OCI bundle in the current directory - creating a rootfs directory and config.json")
 	zap.L().Info("Checking if config.json already exists. If it doesn't, running `runc spec` to create it now")
 	// Check if config.json already exists
@@ -137,7 +143,7 @@ func createOCIBundle() {
 		// File has successfully been created
 		zap.L().Info("config.json created successfully through 'runc spec'")
 	}
-	// TODO - implement docker export $(docker create busybox) | tar -C rootfs -xvf - (programmatically)
+
 	zap.L().Info("Checking if rootfs directory already exists. If it doesn't, creating it now and populating it with contents from the exported image")
 	// Check if rootfs already exists
 	_, errRootFs := os.Stat("rootfs")
@@ -174,16 +180,18 @@ func createOCIBundle() {
 		zap.L().Info("rootfs created successfully through 'mkdir rootfs'")
 	}
 	// By this point, rootfs and config.json should both exist and rootfs should be empty if it did previously exist
-	// Start using `$(docker create busybox) | tar -C rootfs -xvf -` to populate rootfs
-	zap.L().Info("Populating rootfs with contents from the exported busybox image")
-	cmd := exec.Command("sh", "-c", "docker export $(docker create busybox) | tar -C rootfs -xvf -")
+	// Start using `$(docker create [some_image]) | tar -C rootfs -xvf -` to populate rootfs
+	zap.L().Info(fmt.Sprintf("Populating rootfs with contents from the exported %s image", exportImage))
+	// Concat user provided image args into the docker create command
+	dockerExportAndCreateCmd := fmt.Sprintf("docker export $(docker create %s) | tar -C rootfs -xvf -", exportImage)
+	cmd := exec.Command("sh", "-c", dockerExportAndCreateCmd)
 	err = cmd.Run()
 	if err != nil {
-		zap.L().Error("Error populating rootfs with contents from the exported busybox image", zap.Error(err))
+		zap.L().Error(fmt.Sprintf("Error populating rootfs with contents from the exported %s image", exportImage), zap.Error(err))
 		return
 	}
 	// rootfs has successfully been populated
-	zap.L().Info("rootfs populated successfully with contents from the exported busybox image")
+	zap.L().Info(fmt.Sprintf("rootfs populated successfully with contents from the exported %s image", exportImage))
 }
 
 func main() {
@@ -198,6 +206,7 @@ func main() {
 	metricInveralArg := flag.Int("metric-interval", 10, "Interval in seconds to fetch resource metrics. Max interval duration is 60 seconds")
 	containerName := flag.String("container-name", "", "Name of the container to run/monitor/delete")
 	deleteContainer := flag.Bool("delete-container", false, "Delete a container using runc")
+	exportImage := flag.String("export-image", "", "Export an image to populate the rootfs directory in the OCI bundle")
 	flag.Parse()
 	// Runc configurations
 	isRootless := false
@@ -250,6 +259,10 @@ func main() {
 			return
 		}
 	}
-
-	createOCIBundle()
+	// This function will create an OCI bundle in the current directory
+	// It will create a rootfs directory and populate it with contents from the exported image provided by the user
+	// It will also create a config.json if it doesn't already exist
+	if *exportImage != "" {
+		createOCIBundle(*exportImage)
+	}
 }
