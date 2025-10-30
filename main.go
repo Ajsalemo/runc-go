@@ -115,8 +115,8 @@ func deleteRuncContainer(r runc.Runc, containerName string, ctx context.Context)
 // Helper function to create a bundle. This is a two part process
 //
 // 1. Create a rootfs directory and populate it with content from an existing image
-//
 // 2. Create a config.json
+// 3. Export the image contents into rootfs (TODO: implement programmatically)
 func createOCIBundle() {
 	zap.L().Info("Creating an OCI bundle in the current directory - creating a rootfs directory and config.json")
 	zap.L().Info("Checking if config.json already exists. If it doesn't, running `runc spec` to create it now")
@@ -155,10 +155,11 @@ func createOCIBundle() {
 		_, err = dir.Readdir(1)
 		if err == io.EOF {
 			zap.L().Info("rootfs is empty")
-		}	
-		// Otherwise rootfs is not empty - to risk of overwriting existing content, we will not populate it
-		zap.L().Error("rootfs is not empty, not proceeding with image content exporting")
-		return
+		} else {
+			// Otherwise rootfs is not empty - to risk of overwriting existing content, we will not populate it
+			zap.L().Error("rootfs is not empty, not proceeding with image content exporting")
+			return
+		}
 	}
 	// If rootfs doesn't exist then create it - but only do this if it doesn't exist
 	if errors.Is(errRootFs, os.ErrNotExist) {
@@ -174,6 +175,15 @@ func createOCIBundle() {
 	}
 	// By this point, rootfs and config.json should both exist and rootfs should be empty if it did previously exist
 	// Start using `$(docker create busybox) | tar -C rootfs -xvf -` to populate rootfs
+	zap.L().Info("Populating rootfs with contents from the exported busybox image")
+	cmd := exec.Command("sh", "-c", "docker export $(docker create busybox) | tar -C rootfs -xvf -")
+	err = cmd.Run()
+	if err != nil {
+		zap.L().Error("Error populating rootfs with contents from the exported busybox image", zap.Error(err))
+		return
+	}
+	// rootfs has successfully been populated
+	zap.L().Info("rootfs populated successfully with contents from the exported busybox image")
 }
 
 func main() {
