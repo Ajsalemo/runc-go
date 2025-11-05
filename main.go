@@ -12,6 +12,7 @@ import (
 
 	runc "github.com/containerd/go-runc"
 	zap "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type Conf struct {
@@ -19,7 +20,10 @@ type Conf struct {
 }
 
 func init() {
-	zap.ReplaceGlobals(zap.Must(zap.NewProduction()))
+	logger := zap.NewProductionConfig()
+	logger.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	logger.Encoding = "console"
+	zap.ReplaceGlobals(zap.Must(logger.Build()))
 }
 
 // List all containers managed by runc
@@ -101,6 +105,7 @@ func monitorContainerResources(r runc.Runc, containerName string, ctx context.Co
 	}
 	return nil
 }
+
 // Delete the container
 func deleteRuncContainer(r runc.Runc, containerName string, ctx context.Context) error {
 	zap.L().Info("Deleting container", zap.String("container", containerName))
@@ -120,7 +125,7 @@ func deleteRuncContainer(r runc.Runc, containerName string, ctx context.Context)
 // 3. Export the image contents into rootfs (TODO: implement programmatically)
 func createOCIBundle(exportImage string) {
 	// If exportImage is empty return immediately
-	if (exportImage == "") {
+	if exportImage == "" {
 		zap.L().Error("OCI bundle creation was invoked but no image was provided through --export-image flag. Please provide an image to export")
 		return
 	}
@@ -156,7 +161,7 @@ func createOCIBundle(exportImage string) {
 			zap.L().Error("Error opening rootfs directory", zap.Error(err))
 			return
 		}
-		defer dir.Close()	
+		defer dir.Close()
 		// Read the first entry in the directory
 		_, err = dir.Readdir(1)
 		if err == io.EOF {
@@ -217,6 +222,10 @@ func main() {
 	}
 	// List all containers actively managed by runc
 	if *listRuncContainers {
+		if *listRuncContainers && (*runContainerArg || *monitorArg || *deleteContainer || *exportImage != "" || *metricTypeArg != "" || *containerName != "") {
+			zap.L().Warn("--list-containers flag should be used alone without any other flags")
+			return
+		}
 		listContainers(r, ctx)
 	}
 	// Start the container
@@ -224,6 +233,11 @@ func main() {
 	// This is the equivalen of 'runc run -d <container_id> <bundle_path> mycontainer'
 	// Runc 'run' combines 'create' and 'start' functionality
 	if *runContainerArg && *containerName != "" {
+		// If any other args are provided alongside --run-container, log a warning and return
+		if *runContainerArg && *containerName != "" && (*listRuncContainers || *monitorArg || *deleteContainer || *exportImage != "" || *metricTypeArg != "") {
+			zap.L().Warn("--run-container flag should be used only with --container-name and without any other flags")
+			return
+		}
 		err := runContainer(r, *containerName, ctx)
 		if err != nil {
 			return
