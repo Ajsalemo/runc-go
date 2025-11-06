@@ -268,6 +268,10 @@ func main() {
 	}
 	// Delete the container
 	if *containerName != "" && *deleteContainer {
+		if *runContainerArg || *monitorArg || *exportImage != "" || *metricTypeArg != "" {
+			zap.L().Warn("--delete-container flag should be used only with --container-name and without any other flags")
+			return
+		}
 		err := deleteRuncContainer(r, *containerName, ctx)
 		if err != nil {
 			return
