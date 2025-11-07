@@ -281,6 +281,11 @@ func main() {
 	// It will create a rootfs directory and populate it with contents from the exported image provided by the user
 	// It will also create a config.json if it doesn't already exist
 	if *exportImage != "" {
+		// Export image should only be used alone
+		if *exportImage != "" && (*runContainerArg || *monitorArg || *deleteContainer || *listRuncContainers || *metricTypeArg != "" || *containerName != "") {
+			zap.L().Warn("--export-image flag should be used alone without any other flags")
+			return
+		}
 		createOCIBundle(*exportImage)
 	}
 }
