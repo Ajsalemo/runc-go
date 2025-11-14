@@ -1,8 +1,8 @@
 # runc-go
-A program that uses [github.com/containerd/go-runc](github.com/containerd/go-runc) to interact with runc installed on a machine for container management, programmatically.
+A program that uses [github.com/containerd/go-runc](https://github.com/containerd/go-runc) to interact with runc installed on a machine for container management, programmatically.
 
 ## Usage
-This is essentially just a wrapper around [github.com/containerd/go-runc](github.com/containerd/go-runc) (and therefor runc)
+This is essentially just a wrapper around [github.com/containerd/go-runc](https://github.com/containerd/go-runc) (and therefor runc)
 
 - `--list-containers`: List runc containers
 - `--run-container`: Run a container. Must pass also `--container-name "yourcontainername` to it. The OCI bundle must be relative to `main.go`.
